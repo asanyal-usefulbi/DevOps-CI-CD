@@ -1,0 +1,132 @@
+name: Terraform CI/CD with OIDC, Teams Alerts & Team Approval
+ 
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose Terraform Action"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+ 
+permissions:
+  id-token: write
+  contents: read
+ 
+env:
+  TF_VERSION: "1.6.6"
+  WORKING_DIR: "./terraform"
+  AWS_REGION: "ap-south-1"
+ 
+# ---------------------------------------
+# VALIDATION + SECURITY SCANNING
+# ---------------------------------------
+jobs:
+  validate-and-scan:
+    name: Terraform Validation & Security
+    runs-on: ubuntu-latest
+ 
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+ 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+ 
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init
+ 
+      - name: Terraform Validate
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform validate
+ 
+      - name: tfsec Scan (Fail on HIGH)
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: ${{ env.WORKING_DIR }}
+          args: --minimum-severity HIGH
+ 
+      - name: Semgrep Scan (Fail on HIGH)
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: auto
+          severity: ERROR
+ 
+      - name: Terraform Plan
+        if: ${{ github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply' }}
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform plan -out=tfplan
+ 
+      - name: Upload Plan Artifact
+        if: ${{ github.event.inputs.action == 'apply' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.WORKING_DIR }}/tfplan
+ 
+# ---------------------------------------
+# TEAM APPROVAL + EXECUTION
+# ---------------------------------------
+  approval-and-execute:
+    name: Team Approval & Terraform Execution
+    needs: validate-and-scan
+    runs-on: ubuntu-latest
+ 
+    # 🔐 TEAM-BASED MANUAL APPROVAL
+    environment:
+      name: terraform-approval
+ 
+    steps:
+      # ✅ MICROSOFT TEAMS ALERT
+      - name: Teams Notification - Approval Required
+        run: |
+          curl -H "Content-Type: application/json" -d "{
+            \"@type\": \"MessageCard\",
+            \"@context\": \"http://schema.org/extensions\",
+            \"summary\": \"Approval Required\",
+            \"themeColor\": \"0076D7\",
+            \"title\": \"⛔ Approval Required\",
+            \"text\": \"Repository: ${GITHUB_REPOSITORY}\nAction: ${{ github.event.inputs.action }}\nTriggered by: ${GITHUB_ACTOR}\nEnvironment: terraform-approval\"
+          }" ${{ secrets.TEAMS_WEBHOOK_URL }}
+ 
+      - name: Checkout Code
+        uses: actions/checkout@v4
+ 
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+ 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+ 
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init
+ 
+      - name: Download Saved Plan
+        if: ${{ github.event.inputs.action == 'apply' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.WORKING_DIR }}
+ 
+      - name: Terraform Apply (After Team Approval)
+        if: ${{ github.event.inputs.action == 'apply' }}
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform apply -auto-approve tfplan
+ 
+      - name: Terraform Destroy (After Team Approval)
+        if: ${{ github.event.inputs.action == 'destroy' }}
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform destroy -auto-approve
