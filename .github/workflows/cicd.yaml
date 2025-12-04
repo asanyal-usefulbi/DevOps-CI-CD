@@ -28,7 +28,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 🔐 TALISMAN
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
       - name: Talisman Secret Scan
         uses: docker://thoughtworks/talisman:latest
         with:
@@ -53,11 +57,15 @@ jobs:
           working_directory: ${{ env.WORKING_DIR }}
           args: --minimum-severity HIGH
 
-      - name: Semgrep Scan (Fail on HIGH)
-        uses: returntocorp/semgrep-action@v1
-        with:
-          config: auto
-          severity: ERROR
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Semgrep Full Scan (fail on high severity)
+        run: semgrep scan \
+              --config auto \
+              --severity error \
+              --error \
+              --include '**/*'
 
       - name: Terraform Plan (for PR review)
         working-directory: ${{ env.WORKING_DIR }}

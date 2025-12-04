@@ -1,9 +1,13 @@
+Here’s an **updated README** reflecting your **new distributed, team-based approval workflow** and **PR-based Teams notifications**, removing the old manual environment approval steps.
+
+---
+
 # 🚀 Terraform Automation Pipeline
 
-### GitHub Actions CI/CD with OIDC, Security Scanning, Teams Notifications & Manual Team Approval
+### GitHub Actions CI/CD with OIDC, Security Scanning, and Distributed Team Approvals
 
 This repository contains an automated Terraform pipeline powered by **GitHub Actions**, designed for secure, validated, team-approved infrastructure deployments.
-It supports **Terraform Plan**, **Apply**, and **Destroy** operations with built-in security checks and manual approval gates.
+It supports **Terraform Plan**, **Apply**, and **Destroy** operations with built-in security checks and **GitHub-native PR approvals**.
 
 ---
 
@@ -16,30 +20,31 @@ It supports **Terraform Plan**, **Apply**, and **Destroy** operations with built
 
 ### 🛡 **Security & Validation**
 
-The pipeline runs multiple validation and security checks:
+The pipeline runs multiple validation and security checks on pull requests:
 
 * **terraform validate**
 * **tfsec** (fails if HIGH severity issues are found)
 * **Semgrep** (fails on ERROR severity)
-* Optional **Terraform Plan** generation
+* **Talisman** (checks for secrets in the repo)
+* Terraform Plan generation for preview
 
 ### 📨 **Microsoft Teams Alerts**
 
-* Sends a Teams message whenever a deployment requires approval.
-* Includes repository, action, actor, and environment details.
+* Sends a Teams message whenever a **Pull Request is created**.
+* Includes repository, PR title, number, author, branch, and link.
+* Helps approvers track new infrastructure changes.
 
-### 👥 **Team-Based Manual Approval**
+### 👥 **Team-Based Approval via GitHub PRs**
 
-* Apply/Destroy actions require environment-level approval through GitHub Environments.
-* Ensures critical changes are reviewed before execution.
+* Approvers are members of **GitHub Teams** associated with the repository.
+* Approval is enforced using **CODEOWNERS + branch protection rules**.
+* Ensures that only authorized teams can merge PRs and trigger Terraform Apply/Destroy.
 
 ### ⚙️ **Automated Terraform Execution**
 
-Depending on selected input:
-
-* **plan** → Runs validation + scanning + plan
-* **apply** → Requires approval → Uses saved plan → Terraform apply
-* **destroy** → Requires approval → Terraform destroy
+* **plan** → Runs validation + scanning + plan on pull requests.
+* **apply** → Runs automatically **after PR is merged** to `main` (requires team approval in GitHub PR).
+* **destroy** → Runs automatically **after PR is merged** (requires team approval).
 
 ---
 
@@ -49,8 +54,10 @@ Depending on selected input:
 .
 ├── .github/
 │   └── workflows/
-│       └── cicd.yml   # The CI/CD pipeline
-└── Terraform/              # Terraform root module
+│       ├── cicd.yml           # Terraform CI/CD workflow
+│       └── pr-teams-notify.yml # PR notification to Teams
+├── .github/CODEOWNERS         # Team-based approval rules
+└── terraform/                 # Terraform root module
 ```
 
 ---
@@ -59,125 +66,108 @@ Depending on selected input:
 
 ### 1. **GitHub Secrets**
 
-Ensure the following secrets are set as such for all required accounts:
+Ensure the following secrets are set:
 
 | Secret Name         | Description                              |
 | ------------------- | ---------------------------------------- |
 | `AWS_ROLE_ARN`      | IAM role for GitHub OIDC federation      |
 | `TEAMS_WEBHOOK_URL` | Incoming webhook for Teams notifications |
 
-### 2. **GitHub Environment**
+### 2. **GitHub Teams & CODEOWNERS**
 
-Create an environment named:
+* Create a **GitHub Team** for the repository (e.g., `infra-approvers`).
+* Add all authorized approvers to the team.
+* Define `.github/CODEOWNERS`:
 
 ```
-terraform-approval
+* @my-org/infra-approvers
 ```
 
-Enable:
+* Enable **branch protection** on `main`:
 
-* Required reviewer(s)
-* (Optional) Deployment protection rules
-* (Optional) Environment secrets
+  * Require pull request reviews
+  * Require approval from Code Owners
+  * Require status checks (terraform validate, tfsec, semgrep, Talisman)
 
 ---
 
-## 🚦 Workflow Inputs
+## 🚦 Workflow Triggers
 
-Triggered manually via **workflow_dispatch**:
+### Pull Request Validation
 
-| Input    | Values                 | Description                        |
-| -------- | ---------------------- | ---------------------------------- |
-| `action` | plan / apply / destroy | Determines the Terraform operation |
+* Triggered on **pull_request** for:
 
-Additional inputs can be taken in a similar way for AWS Account Number
+  * opened
+  * reopened
+  * ready_for_review
 
-Example run:
+### Post-Merge Deployment
 
-```
-Action: plan
-```
+* Triggered on **push** to `main` branch (after PR approval and merge)
 
 ---
 
 ## 🔄 Pipeline Overview
 
-### **1️⃣ Validation & Security Scanning**
+### **1️⃣ Validation & Security Scanning (Pull Request)**
 
-Runs on every action:
+* Terraform configuration validation
+* Security scans: tfsec, Semgrep, Talisman
+* Terraform Plan generation
+* Sends a **Teams notification** for the PR
 
-* Validates Terraform configuration
-* Performs tfsec & Semgrep static analysis
-* Generates Terraform plan (for plan/apply)
-* Uploads plan as an artifact (for apply)
+### **2️⃣ Terraform Execution (Post-Merge)**
 
-### **2️⃣ Approval + Execution**
+* Automatically triggered **after PR is merged** to `main`
 
-Triggered after successful validation:
+* Runs Terraform action based on PR workflow input:
 
-* Sends Teams alert for approval
-* Waits for GitHub Environment approval
-* Runs the final Terraform action:
+  * `apply` → Uses plan generated in PR workflow
+  * `destroy` → Destroys resources
 
-  * `apply` → uses the saved plan
-  * `destroy` → destroys resources
+* Only merges approved by the **repository team** are executed
 
 ---
 
 ## 🏗 How to Use
 
-### **Step 1 — Trigger the Workflow**
+### **Step 1 — Open a Pull Request**
 
-Go to:
-
-```
-GitHub → Actions → Terraform CI/CD → Run workflow
-```
-
-Select the action:
-
-* **plan**
-* **apply**
-* **destroy**
+* Developers create a PR to `main` with changes.
+* A Teams notification is sent automatically.
 
 ### **Step 2 — Review Validation Output**
 
-Ensure:
+* Ensure Terraform validation passes
+* tfsec and Semgrep scans pass
+* Plan output looks correct
 
-* tfsec scan passes
-* Semgrep passes
-* Plan output looks correct (for apply)
+### **Step 3 — PR Approval by Team**
 
-### **Step 3 — Approve (For Apply/Destroy Only)**
+* Approvers in the GitHub Team review and approve the PR
+* Branch protection enforces approval before merge
 
-Reviewer approves the run inside:
+### **Step 4 — Merge and Automatic Deployment**
 
-```
-Environment → terraform-approval
-```
-
-### **Step 4 — Automatic Deployment**
-
-Terraform is executed according to your selected action.
+* Once merged, Terraform Apply or Destroy runs automatically on the `main` branch
 
 ---
 
 ## 🔒 Security Design
 
-* OIDC replaces long-lived AWS credentials.
-* tfsec + Semgrep fail the pipeline on serious issues.
-* Manual approval prevents accidental infrastructure changes.
-* Plans are generated during validation and reused for apply, ensuring consistency.
+* OIDC replaces long-lived AWS credentials
+* tfsec, Semgrep, and Talisman fail the pipeline on serious issues
+* PR-based approvals enforce distributed control per repository
+* Plans are generated during PR validation and reused for Apply, ensuring consistency
 
 ---
 
-## 📄 Workflow File
+## 📄 Workflow Files
 
-The workflow file (`cicd.yml`) is included exactly as implemented in the root message above.
-
+| Workflow File                           | Purpose                                                                                |
+| --------------------------------------- | -------------------------------------------------------------------------------------- |
+| `.github/workflows/cicd.yml`            | Terraform validation, security scanning, plan generation, and post-merge Apply/Destroy |
+| `.github/workflows/pr-teams-notify.yml` | Sends Teams notification on PR creation                                                |
+| `.github/CODEOWNERS`                    | Defines team-based PR approval rules                                                   |
 
 ---
-
-## 🙌 Support
-
-If you have feature requests or run into issues, open an issue in the repository or contact the DevOps Team
