@@ -102,3 +102,7 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: terraform apply -auto-approve
 
+      # - name: Terraform Delete
+      #   working-directory: ${{ env.WORKING_DIR }}
+      #   run: terraform delete
+
