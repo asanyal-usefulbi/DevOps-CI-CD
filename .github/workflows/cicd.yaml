@@ -2,9 +2,9 @@ name: Terraform CI/CD with OIDC, Distributed PR Approvals
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [ dist-workflow ]
   push:
-    branches: [ main ]
+    branches: [ dist-workflow ]
 
 permissions:
   id-token: write
@@ -93,3 +93,4 @@ jobs:
       - name: Terraform Apply
         working-directory: ${{ env.WORKING_DIR }}
         run: terraform apply -auto-approve
+
