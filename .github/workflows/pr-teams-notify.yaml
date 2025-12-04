@@ -1,0 +1,30 @@
+name: PR Teams Notification
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+jobs:
+  notify-teams:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Teams Notification for PR
+        run: |
+          curl -H "Content-Type: application/json" -d "{
+            \"@type\": \"MessageCard\",
+            \"@context\": \"http://schema.org/extensions\",
+            \"summary\": \"New Pull Request Raised\",
+            \"themeColor\": \"0076D7\",
+            \"title\": \"📌 New Pull Request Created\",
+            \"sections\": [{
+              \"facts\": [
+                {\"name\": \"Repository\", \"value\": \"${GITHUB_REPOSITORY}\"},
+                {\"name\": \"PR Title\", \"value\": \"${{ github.event.pull_request.title }}\"},
+                {\"name\": \"PR Number\", \"value\": \"#${{ github.event.pull_request.number }}\"},
+                {\"name\": \"Author\", \"value\": \"${{ github.actor }}\"},
+                {\"name\": \"Branch\", \"value\": \"${{ github.event.pull_request.head.ref }}\"}
+              ],
+              \"text\": \"<a href='${{ github.event.pull_request.html_url }}'>Click here to view the PR</a>\"
+            }]
+          }" ${{ secrets.TEAMS_WEBHOOK_URL }}

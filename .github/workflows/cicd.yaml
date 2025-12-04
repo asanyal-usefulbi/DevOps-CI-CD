@@ -33,7 +33,17 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
- 
+
+      # -----------------------------
+      # 🔐 TALISMAN SECRET SCANNING
+      # -----------------------------
+      - name: Talisman Secret Scan
+        uses: docker://thoughtworks/talisman:latest
+        with:
+          args: >
+            -g pre-commit
+            -i .
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -79,12 +89,10 @@ jobs:
     needs: validate-and-scan
     runs-on: ubuntu-latest
  
-    # 🔐 TEAM-BASED MANUAL APPROVAL
     environment:
       name: terraform-approval
  
     steps:
-      # ✅ MICROSOFT TEAMS ALERT
       - name: Teams Notification - Approval Required
         run: |
           curl -H "Content-Type: application/json" -d "{
